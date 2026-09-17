@@ -1,0 +1,765 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>压缩包内容检索器</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;color:#172033;background:#f5f7fb}
+*{box-sizing:border-box}body{margin:0}.wrap{max-width:900px;margin:0 auto;padding:28px 16px 50px}
+h1{margin:0 0 8px;font-size:27px}.sub{color:#64748b;margin-bottom:24px;line-height:1.6}
+.card{background:#fff;border:1px solid #e5eaf2;border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 4px 18px #1720330a}
+label{display:block;font-weight:700;margin:13px 0 7px}.hint{font-size:13px;color:#64748b;font-weight:400}
+input,button{font:inherit}input[type=text],input[type=number]{width:100%;padding:11px 12px;border:1px solid #cbd5e1;border-radius:10px;outline:0;background:#fff}
+input:focus{border-color:#64748b;box-shadow:0 0 0 3px #64748b18}
+.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+button{border:0;border-radius:10px;padding:11px 16px;cursor:pointer;background:#1f2937;color:white;font-weight:700}
+button.secondary{background:#eef2f7;color:#334155}
+button.secondary:hover{background:#e2e8f0}
+button.danger{background:#b91c1c}
+button.danger:disabled{background:#e2e8f0;color:#94a3b8;cursor:not-allowed}
+button:disabled{opacity:.6;cursor:not-allowed}
+button.small-btn{padding:8px 13px;font-size:14px}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.status{padding:11px 13px;border-radius:10px;background:#f1f5f9;color:#475569;line-height:1.5;white-space:pre-wrap;margin-top:16px}
+.status.ok{background:#ecfdf5;color:#047857}.status.err{background:#fef2f2;color:#b91c1c}
+.result{border-left:4px solid #334155;padding:13px 15px;background:#f8fafc;border-radius:8px;margin-top:12px}
+.result .big{font-size:23px;font-weight:800;letter-spacing:1px;word-break:break-all}.meta{color:#64748b;font-size:14px;margin-top:5px}
+.small{font-size:13px;color:#64748b;line-height:1.65}
+.hidden{display:none}
+.path-display{margin-top:10px;padding:9px 12px;border-radius:8px;font-size:13px;line-height:1.55;background:#f1f5f9;color:#475569;word-break:break-all}
+.path-display b{color:#172033}
+.path-display.ok{background:#ecfdf5;color:#047857}
+.path-display.ok b{color:#065f46}
+.path-display.pending{background:#fffbeb;color:#92400e}
+.path-display.pending b{color:#78350f}
+@media(max-width:650px){.grid{grid-template-columns:1fr}.wrap{padding-top:18px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>压缩包文字内容检索器</h1>
+  <div class="sub">检索全程在浏览器内存中完成：ZIP 文件内容与检索结果不会写入任何存储或服务器，刷新/关闭页面后本次数据即释放。<br>只有“固定目录”的路径与授权句柄会保存在本机 IndexedDB 中，用来免去每次打开都重新选文件夹。</div>
+
+  <div class="card">
+    <label>① 本次 ZIP</label>
+    <label class="hint">压缩包文件名包含（留空则匹配全部 ZIP）</label>
+    <input id="zipKeyword" type="text" value="今日授权资料" placeholder="例如 今日授权资料">
+    <div class="actions">
+      <button id="autoFind">自动查找并载入</button>
+      <button id="pickFile" class="secondary">手动选择 ZIP（支持删除原文件）</button>
+    </div>
+    <div id="status" class="status">尚未载入压缩包。</div>
+  </div>
+
+  <div class="card">
+    <label>② 查找位置</label>
+    <div class="grid">
+      <div><label class="hint">第？册.html</label><input id="book" type="number" min="1" placeholder="例如 01"></div>
+      <div><label class="hint">第？页</label><input id="page" type="number" min="1" placeholder="例如 12"></div>
+      <div><label class="hint">第？号</label><input id="no" type="number" min="1" placeholder="例如 03"></div>
+    </div>
+    <div class="actions">
+      <button id="search">开始检索</button>
+      <button class="secondary" id="clear">清除本次数据</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <strong>检索结果</strong>
+    <div id="result" class="small" style="margin-top:10px">请先载入本次 ZIP。</div>
+
+    <div id="deleteBox" class="hidden" style="margin-top:16px">
+      <button id="deleteZip" class="danger">确认删除原始压缩包</button>
+      <div id="deleteHint" class="small" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- ===== 页面最底部：固定起始目录 ===== -->
+  <div class="card">
+    <label>固定起始目录（可选）</label>
+    <input id="fixedPath" type="text" placeholder="例如 D:\资料\压缩包　或　/Users/me/zips">
+    <div id="fixedPathDisplay" class="path-display">当前路径：<b>未设置</b>（点击“自动查找”时会弹出文件夹选择框）</div>
+    <div class="actions">
+      <button id="clearFixedPath" class="secondary">清除固定目录</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/*
+  这是一个不依赖第三方库的 ZIP 阅读器：
+  - 支持常见 ZIP 的 Store(0) 和 Deflate(8)
+  - 使用浏览器原生 DecompressionStream('deflate-raw')
+  - 仅在内存中解析 HTML
+*/
+const state = { bytes:null, entries:new Map(), sourceName:"", fileHandle:null };
+let lastResultCode = "";   // 最近一次检索到的邀请码，供复制按钮使用
+
+const $ = id => document.getElementById(id);
+function setStatus(text, type=""){ $("status").className="status "+type; $("status").textContent=text; }
+
+function u16(a,p){return a[p]|(a[p+1]<<8)}
+function u32(a,p){return (a[p]|(a[p+1]<<8)|(a[p+2]<<16)|(a[p+3]<<24))>>>0}
+
+async function inflateRaw(bytes){
+  if(!("DecompressionStream" in window)) throw new Error("当前浏览器不支持原生 ZIP 解压（需要较新的 Chrome/Edge/Safari）。");
+  const ds=new DecompressionStream("deflate-raw");
+  const stream=new Blob([bytes]).stream().pipeThrough(ds);
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+function findEOCD(a){
+  for(let p=a.length-22;p>=Math.max(0,a.length-22-65535);p--){
+    if(u32(a,p)===0x06054b50) return p;
+  }
+  return -1;
+}
+function decodeName(bytes){
+  try{return new TextDecoder("utf-8",{fatal:false}).decode(bytes)}
+  catch(e){return new TextDecoder().decode(bytes)}
+}
+async function parseZip(blob){
+  const a=new Uint8Array(await blob.arrayBuffer());
+  const eocd=findEOCD(a);
+  if(eocd<0) throw new Error("不是标准 ZIP 文件，或 ZIP 已损坏。");
+  const count=u16(a,eocd+10), cdSize=u32(a,eocd+12), cdOff=u32(a,eocd+16);
+  const map=new Map(); let p=cdOff;
+  for(let i=0;i<count;i++){
+    if(u32(a,p)!==0x02014b50) throw new Error("ZIP 中央目录解析失败。");
+    const flags=u16(a,p+8), method=u16(a,p+10), csize=u32(a,p+20), usize=u32(a,p+24);
+    const nlen=u16(a,p+28), xlen=u16(a,p+30), clen=u16(a,p+32), lhoff=u32(a,p+42);
+    const name=decodeName(a.slice(p+46,p+46+nlen));
+    map.set(name,{flags,method,csize,usize,lhoff});
+    p+=46+nlen+xlen+clen;
+  }
+  return {a,map};
+}
+async function readEntry(z, ent){
+  if(ent.flags & 1) throw new Error("ZIP 文件受密码保护，无法在本页面解压。");
+  const p=ent.lhoff;
+  if(u32(z.a,p)!==0x04034b50) throw new Error("ZIP 本地文件头损坏。");
+  const nlen=u16(z.a,p+26), xlen=u16(z.a,p+28);
+  const start=p+30+nlen+xlen;
+  const raw=z.a.slice(start,start+ent.csize);
+  if(ent.method===0) return raw;
+  if(ent.method===8) return await inflateRaw(raw);
+  throw new Error("发现不支持的 ZIP 压缩方法："+ent.method);
+}
+async function readText(z,name){
+  const ent=z.map.get(name);
+  if(!ent) return null;
+  const bytes=await readEntry(z,ent);
+  return new TextDecoder("utf-8",{fatal:false}).decode(bytes);
+}
+function normalize(s){return s.replace(/\uFEFF/g,"").trim()}
+function bookName(n){return "第"+String(n).padStart(2,"0")+"册.html"}
+
+function lookupHtml(html, page, no){
+  const doc=new DOMParser().parseFromString(html,"text/html");
+  const sections=[...doc.querySelectorAll("section.page")];
+  const sec=sections.find(x=>{
+    const t=x.querySelector("h2 span")?.textContent||"";
+    return new RegExp("第\\s*"+page+"\\s*页").test(t);
+  });
+  if(!sec) return {ok:false,msg:`没有找到“第${page}页”。`};
+  const cards=[...sec.querySelectorAll(".card")];
+  const card=cards.find(x=>{
+    const t=x.querySelector(".no")?.textContent||"";
+    return new RegExp("第\\s*"+String(no).padStart(2,"0")+"\\s*号").test(t) ||
+           new RegExp("第\\s*"+no+"\\s*号").test(t);
+  });
+  if(!card) return {ok:false,msg:`“第${page}页”中没有找到“第${String(no).padStart(2,"0")}号”。`};
+  const code=normalize(card.querySelector(".code")?.textContent||"");
+  const text=normalize(card.textContent||"");
+  return {ok:true,code,text};
+}
+
+async function loadBlob(blob,name,handle=null){
+  setStatus("正在读取 ZIP（仅在内存中解析）…");
+  try{
+    const z=await parseZip(blob);
+    state.bytes=blob; state.entries=z; state.sourceName=name||blob.name||"本次 ZIP";
+    state.fileHandle=handle||null;
+    const html=[...z.map.keys()].filter(n=>/^第\d+册\.html$/i.test(n));
+    if(!html.length) throw new Error("ZIP 中没有发现“第01册.html”这类目标文件。");
+    setStatus(`已载入：${state.sourceName}\n发现 ${html.length} 个册文件。现在可以输入“册 / 页 / 号”检索。`,"ok");
+    $("result").textContent="已准备好，请输入三个查找位置。";
+    $("deleteBox").classList.add("hidden");
+  }catch(e){
+    state.bytes=null; state.entries=new Map(); state.fileHandle=null;
+    setStatus("载入失败："+e.message,"err");
+  }
+}
+
+/* ============================================================
+   持久化设置：只保存“固定目录”和“关键词”，不保存 ZIP 内容
+   浏览器唯一允许“记住文件夹访问权”的方式，就是把
+   FileSystemDirectoryHandle 存进 IndexedDB。
+   ============================================================ */
+const IDB_NAME = "zipSearchToolSettings";
+const IDB_STORE = "kv";
+const IDB_VERSION = 1;
+const KEY_FIXED_DIR = "fixedDir";
+const KEY_KEYWORD   = "zipKeyword";
+
+function idbOpen(){
+  return new Promise((resolve, reject) => {
+    if(!("indexedDB" in window)) return reject(new Error("当前浏览器不支持 IndexedDB"));
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error("IndexedDB 打开失败"));
+  });
+}
+async function idbSet(key, value){
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+    tx.onabort = () => { db.close(); reject(tx.error || new Error("写入被中止")); };
+  });
+}
+async function idbGet(key){
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = () => { db.close(); resolve(req.result); };
+    req.onerror = () => { db.close(); reject(req.error); };
+  });
+}
+async function idbDel(key){
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).delete(key);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+/* ============================================================
+   固定起始目录
+   ------------------------------------------------------------
+   浏览器不允许网页直接按 "D:\xxx" 这样的路径字符串打开文件夹，
+   所以这里的做法是：
+     - 用户填写路径文字（仅作为“核对 / 标识”用）
+     - 第一次使用时，在弹出的目录选择框里确认一次
+     - 拿到目录句柄后，连同路径一起存进 IndexedDB
+     - 下次打开本页时自动读回；若权限仍在，直接可用；
+       若权限被浏览器收回，页面显示“恢复授权”按钮，
+       点一下即可，无需重新选择文件夹。
+   ============================================================ */
+const fixedDir = { path:"", handle:null, permission:"" };   // permission: "" | "granted" | "prompt"
+
+/* 路径里若含桌面/下载等字样，先猜一个浏览器内置的已知目录当起点 */
+const WELL_KNOWN = [
+  [/desktop|桌面/i, "desktop"],
+  [/downloads?|下载/i, "downloads"],
+  [/documents?|文档/i, "documents"],
+  [/pictures?|图片|照片/i, "pictures"],
+  [/videos?|视频/i, "videos"],
+  [/music|音乐|音频/i, "music"],
+];
+function guessStartIn(path){
+  for(const [re,id] of WELL_KNOWN) if(re.test(path)) return id;
+  return undefined;
+}
+
+/* ---- 保存 / 读取固定目录设置 ---- */
+let saveFixedDirTimer = null;
+function scheduleSaveFixedDir(){
+  clearTimeout(saveFixedDirTimer);
+  saveFixedDirTimer = setTimeout(() => { saveFixedDirNow(); }, 400);
+}
+async function saveFixedDirNow(){
+  try{
+    await idbSet(KEY_FIXED_DIR, {
+      path: fixedDir.path || "",
+      handle: fixedDir.handle || null
+    });
+  }catch(e){
+    console.warn("保存固定目录设置失败（不影响本次使用）：", e);
+  }
+}
+async function restoreFixedDir(){
+  // 恢复关键词
+  try{
+    const kw = await idbGet(KEY_KEYWORD);
+    if(typeof kw === "string" && kw) $("zipKeyword").value = kw;
+  }catch(e){ console.warn(e); }
+
+  // 恢复固定目录
+  let saved = null;
+  try{
+    saved = await idbGet(KEY_FIXED_DIR);
+  }catch(e){ console.warn(e); }
+
+  if(saved && typeof saved.path === "string" && saved.path){
+    $("fixedPath").value = saved.path;
+    fixedDir.path = saved.path;
+    fixedDir.handle = saved.handle || null;
+    fixedDir.permission = "";
+
+    if(fixedDir.handle){
+      const perm = await queryPermissionSafe(fixedDir.handle);
+      if(perm === "granted"){
+        fixedDir.permission = "granted";
+      }else if(perm === "prompt"){
+        fixedDir.permission = "prompt";
+      }else{
+        // denied / 句柄已失效 → 丢弃句柄，但保留路径文字
+        fixedDir.handle = null;
+        fixedDir.permission = "";
+        scheduleSaveFixedDir();
+      }
+    }
+  }
+  updateFixedPathDisplay();
+}
+
+/* ---- 权限工具 ---- */
+async function queryPermissionSafe(handle, mode="readwrite"){
+  if(!handle) return "invalid";
+  if(typeof handle.queryPermission !== "function") return "granted";
+  try{
+    return await handle.queryPermission({mode});
+  }catch(e){
+    return "invalid";   // 句柄已失效（文件夹被移动 / 删除 / 换浏览器档案）
+  }
+}
+/* 由用户点击触发，请求权限；成功则返回 true */
+async function requestPermissionFromUser(){
+  if(!fixedDir.handle) return false;
+  if(typeof fixedDir.handle.requestPermission !== "function") return false;
+  try{
+    const perm = await fixedDir.handle.requestPermission({mode:"readwrite"});
+    if(perm === "granted"){
+      fixedDir.permission = "granted";
+      await saveFixedDirNow();
+      updateFixedPathDisplay();
+      return true;
+    }
+  }catch(e){
+    console.warn("requestPermission 失败：", e);
+  }
+  return false;
+}
+
+/* ---- 更新“当前路径”显示 ---- */
+function updateFixedPathDisplay(){
+  const el = $("fixedPathDisplay");
+  if(!el) return;
+  const path = $("fixedPath").value.trim();
+  const bound = !!(fixedDir.handle && fixedDir.path === path);
+  const perm = fixedDir.permission;
+
+  el.innerHTML = "";
+  el.className = "path-display";
+
+  if(!path){
+    el.innerHTML = "当前路径：<b>未设置</b>（点击“自动查找”时会弹出文件夹选择框）";
+    return;
+  }
+
+  if(bound && perm === "granted"){
+    el.className = "path-display ok";
+    el.innerHTML = "当前路径：<b>" + escapeHtml(path) + "</b>（已授权，可直接定位）";
+    return;
+  }
+
+  if(bound && (perm === "prompt" || perm === "")){
+    el.className = "path-display pending";
+    el.innerHTML = "当前路径：<b>" + escapeHtml(path) + "</b>（浏览器暂未放行，点下方按钮恢复授权即可，<b>无需重新选文件夹</b>）";
+    const btn = document.createElement("button");
+    btn.className = "secondary small-btn";
+    btn.style.marginTop = "8px";
+    btn.textContent = "恢复对该文件夹的访问权限";
+    btn.onclick = async () => {
+      btn.disabled = true;
+      const old = btn.textContent;
+      btn.textContent = "正在请求授权…";
+      const ok = await requestPermissionFromUser();
+      if(ok){
+        setStatus("已恢复对该文件夹的访问权限，现在可以直接“自动查找并载入”了。", "ok");
+      }else{
+        setStatus("未取得授权。若浏览器已明确拒绝，请点击“自动查找并载入”重新选择一次文件夹。", "err");
+        btn.disabled = false;
+        btn.textContent = old;
+      }
+    };
+    el.appendChild(btn);
+    return;
+  }
+
+  // 无句柄，或路径文字变了（句柄不再对应）
+  el.className = "path-display pending";
+  el.innerHTML = "当前路径：<b>" + escapeHtml(path) + "</b>（尚未绑定文件夹，首次使用“自动查找”时在弹出的选择框中确认一次即可）";
+}
+
+/* ---- 取得目录句柄：优先复用已保存的，不行再让用户选 ---- */
+async function acquireDirHandle(){
+  const path = $("fixedPath").value.trim();
+
+  if(fixedDir.handle && fixedDir.path === path){
+    let perm = await queryPermissionSafe(fixedDir.handle);
+    if(perm === "granted"){
+      fixedDir.permission = "granted";
+      updateFixedPathDisplay();
+      return fixedDir.handle;
+    }
+    if(perm === "prompt" && typeof fixedDir.handle.requestPermission === "function"){
+      try{
+        perm = await fixedDir.handle.requestPermission({mode:"readwrite"});
+      }catch(e){ perm = "denied"; }
+      if(perm === "granted"){
+        fixedDir.permission = "granted";
+        await saveFixedDirNow();
+        updateFixedPathDisplay();
+        return fixedDir.handle;
+      }
+    }
+    // 不可用 → 丢弃旧句柄，走重新选择流程
+    fixedDir.handle = null;
+    fixedDir.permission = "";
+  }
+
+  if(typeof window.showDirectoryPicker !== "function"){
+    throw new Error("当前浏览器不支持目录授权，无法自动查找压缩包");
+  }
+
+  const opts = { id:"zipFixedDir", mode:"readwrite" };
+  const guess = guessStartIn(path);
+  if(guess) opts.startIn = guess;
+
+  let dir;
+  try{
+    dir = await window.showDirectoryPicker(opts);
+  }catch(err){
+    if(err && err.name === "AbortError") throw err;      // 用户主动取消
+    dir = await window.showDirectoryPicker({ id: opts.id }); // 退化参数再试一次
+  }
+
+  fixedDir.path = path;
+  fixedDir.handle = dir;
+  fixedDir.permission = "granted";
+  updateFixedPathDisplay();
+  await saveFixedDirNow();
+  return dir;
+}
+
+/* ---- 列出目录中的所有条目 ---- */
+async function listDirEntries(dir){
+  const out = [];
+  if(typeof dir.values === "function"){
+    for await (const entry of dir.values()) out.push(entry);
+  }else if(typeof dir.entries === "function"){
+    for await (const [, entry] of dir.entries()) out.push(entry);
+  }
+  return out;
+}
+
+/* ---- 在目录中扫描：文件名包含 keyword 的 .zip ---- */
+async function scanDirForZip(dir, keyword){
+  const entries = await listDirEntries(dir);
+  const k = keyword.toLowerCase();
+  const out = entries.filter(e =>
+    e.kind === "file" &&
+    /\.zip$/i.test(e.name) &&
+    (!k || e.name.toLowerCase().includes(k))
+  );
+  out.sort((a,b)=> a.name.localeCompare(b.name, "zh-CN"));
+  return out;
+}
+
+/* ---- 用文件句柄载入 ---- */
+async function loadFromHandle(handle){
+  try{
+    const file = await handle.getFile();
+    await loadBlob(file, file.name, handle);
+  }catch(e){
+    setStatus("读取失败：" + (e.message || e), "err");
+  }
+}
+
+/* ---- 匹配到多个 ZIP 时，列出按钮让用户挑 ---- */
+function renderZipChoices(list, keyword){
+  setStatus(`找到 ${list.length} 个匹配的 ZIP，请选择要检索的那一个。`, "ok");
+  $("result").innerHTML =
+    `<div class="small">文件名包含“${escapeHtml(keyword || "（未限制）")}”的压缩包：</div>
+     <div id="zipChoices" class="actions" style="margin-top:10px"></div>`;
+  const wrap = $("zipChoices");
+  list.forEach(h=>{
+    const b = document.createElement("button");
+    b.className = "secondary small-btn";
+    b.textContent = h.name;
+    b.onclick = () => loadFromHandle(h);
+    wrap.appendChild(b);
+  });
+}
+
+/* ---- 自动查找并载入 ---- */
+$("autoFind").onclick = async () => {
+  const keyword = $("zipKeyword").value.trim();
+
+  let dir;
+  try{
+    dir = await acquireDirHandle();
+  }catch(err){
+    if(err && err.name === "AbortError"){ setStatus("已取消。"); return; }
+    setStatus("无法访问文件夹：" + (err.message || err), "err");
+    return;
+  }
+
+  setStatus("正在扫描文件夹中…");
+  let files;
+  try{
+    files = await scanDirForZip(dir, keyword);
+  }catch(err){
+    setStatus("扫描文件夹失败：" + (err.message || err), "err");
+    return;
+  }
+
+  if(!files.length){
+    setStatus(keyword
+      ? `在所选文件夹中没有找到文件名包含“${keyword}”的 ZIP。\n可清空关键词后重试，或点“手动选择 ZIP”。`
+      : "该文件夹里没有 ZIP 文件。", "err");
+    return;
+  }
+
+  if(files.length === 1){
+    await loadFromHandle(files[0]);
+    return;
+  }
+
+  renderZipChoices(files, keyword);
+};
+
+/* 打开 ZIP 文件选择器；startIn 可选 */
+async function openZipPicker(startIn){
+  const base = {
+    id: "zipPicker",
+    types: [{description:"ZIP 压缩包", accept:{"application/zip":[".zip"]}}],
+    multiple: false
+  };
+  if(startIn){
+    try{
+      const handles = await window.showOpenFilePicker({ ...base, startIn });
+      return handles[0];
+    }catch(e){
+      if(e && e.name === "AbortError") throw e;
+      // 某些浏览器可能不接受目录句柄作为 startIn → 退化为默认位置
+      console.warn("带 startIn 打开失败，改用默认位置：", e);
+    }
+  }
+  const handles = await window.showOpenFilePicker(base);
+  return handles[0];
+}
+
+/* ---- 手动选择 ZIP（支持删除原文件 + 固定起始路径） ---- */
+$("pickFile").onclick = async () => {
+  if(!window.showOpenFilePicker){
+    setStatus("当前浏览器不支持“可删除原文件”的文件选择器（需要较新的 Chrome / Edge）。","err");
+    return;
+  }
+
+  const path = $("fixedPath").value.trim();
+  let startIn;
+
+  // 1) 如果填写了固定路径，先取得对应目录句柄
+  if(path){
+    try{
+      startIn = await acquireDirHandle();
+      updateFixedPathDisplay();
+    }catch(err){
+      if(err && err.name === "AbortError"){
+        setStatus("已取消。");
+        return;
+      }
+      setStatus("定位固定目录失败：" + (err.message || err) + "\n将改用浏览器默认位置打开文件选择器。","err");
+      startIn = undefined;
+    }
+  }
+
+  // 2) 打开 ZIP 文件选择器
+  try{
+    const fileHandle = await openZipPicker(startIn);
+    await loadFromHandle(fileHandle);
+  }catch(e){
+    if(e && e.name === "AbortError") return;   // 用户取消
+    setStatus("选择文件失败：" + (e.message || e),"err");
+  }
+};
+
+/* ---- 关键词输入：自动保存 ---- */
+let saveKeywordTimer = null;
+$("zipKeyword").addEventListener("input", () => {
+  clearTimeout(saveKeywordTimer);
+  saveKeywordTimer = setTimeout(async () => {
+    try{ await idbSet(KEY_KEYWORD, $("zipKeyword").value); }catch(e){}
+  }, 400);
+});
+
+/* ---- 固定路径输入：改了就与旧句柄脱钩，只保留路径文字 ---- */
+$("fixedPath").addEventListener("input", () => {
+  const path = $("fixedPath").value.trim();
+  if(path !== fixedDir.path){
+    fixedDir.handle = null;
+    fixedDir.permission = "";
+    fixedDir.path = path;
+    scheduleSaveFixedDir();
+  }
+  updateFixedPathDisplay();
+});
+
+/* ---- 清除固定目录（同时清掉本机保存的记录） ---- */
+$("clearFixedPath").onclick = async () => {
+  fixedDir.path = ""; fixedDir.handle = null; fixedDir.permission = "";
+  $("fixedPath").value = "";
+  updateFixedPathDisplay();
+  try{ await idbDel(KEY_FIXED_DIR); }catch(e){ console.warn(e); }
+  setStatus("已清除固定起始目录记录，下次将重新弹出文件夹选择框。");
+};
+
+$("search").onclick=async()=>{
+  $("result").textContent="";
+  $("deleteBox").classList.add("hidden");
+  lastResultCode="";
+  if(!state.entries.map){$("result").textContent="请先载入本次 ZIP。";return}
+  const b=Number($("book").value), p=Number($("page").value), n=Number($("no").value);
+  if(!b||!p||!n){$("result").textContent="请完整填写：第？册 / 第？页 / 第？号。";return}
+  const name=bookName(b);
+  try{
+    const html=await readText(state.entries,name);
+    if(html===null){$("result").textContent=`ZIP 中没有找到“${name}”。`;return}
+    const r=lookupHtml(html,p,n);
+    if(!r.ok){$("result").textContent=r.msg;return}
+    lastResultCode=r.code||"";
+    $("result").innerHTML=
+      `<div class="result">
+        <div class="big">${escapeHtml(r.code||"（未发现 .code 内容）")}</div>
+        <div class="meta">来源：${escapeHtml(name)} / 第${p}页 / 第${String(n).padStart(2,"0")}号</div>
+        <div class="actions" style="margin-top:12px">
+          <button id="copyCode" class="secondary small-btn"${r.code?"":" disabled"}>复制邀请码</button>
+        </div>
+        ${r.text?`<div style="margin-top:10px">${escapeHtml(r.text)}</div>`:""}
+      </div>`;
+    showDeleteOption();      // 读取成功后才出现“确认删除原始压缩包”
+  }catch(e){$("result").textContent="检索失败："+e.message}
+};
+
+/* ---- 复制邀请码 ---- */
+$("result").addEventListener("click", async e=>{
+  const btn=e.target.closest("#copyCode");
+  if(!btn || btn.disabled) return;
+  const text=lastResultCode;
+  if(!text) return;
+  const old=btn.textContent;
+  const ok=await copyText(text);
+  if(ok){
+    btn.textContent="已复制 ✓";
+    btn.classList.remove("secondary");
+    setTimeout(()=>{btn.textContent=old;btn.classList.add("secondary")},1500);
+  }else{
+    btn.textContent="复制失败，请手动选择";
+    setTimeout(()=>{btn.textContent=old},1800);
+  }
+});
+
+async function copyText(text){
+  // 优先使用异步剪贴板 API（需 https / localhost 等安全上下文）
+  try{
+    if(navigator.clipboard && window.isSecureContext){
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  }catch(e){/* 继续尝试降级方案 */}
+  // 降级方案：临时 textarea + execCommand
+  try{
+    const ta=document.createElement("textarea");
+    ta.value=text;
+    ta.setAttribute("readonly","");
+    ta.style.position="fixed";
+    ta.style.top="-1000px";
+    ta.style.left="-1000px";
+    ta.style.opacity="0";
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    ta.setSelectionRange(0,ta.value.length);
+    const ok=document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  }catch(e){ return false; }
+}
+
+/* ---- 删除按钮的显示逻辑 ---- */
+function showDeleteOption(){
+  const box=$("deleteBox"), btn=$("deleteZip"), hint=$("deleteHint");
+  box.classList.remove("hidden");
+  if(state.fileHandle && typeof state.fileHandle.remove==="function"){
+    btn.disabled=false;
+    btn.textContent="确认删除原始压缩包";
+    hint.textContent="将删除你本机磁盘上的文件："+state.sourceName+"（浏览器会再弹一次确认框）。此操作不可撤销。";
+  }else{
+    btn.disabled=true;
+    btn.textContent="无法删除原始压缩包";
+    hint.textContent="本次载入未能取得文件句柄，浏览器不允许网页删除本机文件。请改用“自动查找并载入”或“手动选择 ZIP”重新载入一次，再检索。";
+  }
+}
+
+/* ---- 执行删除 ---- */
+$("deleteZip").onclick=async()=>{
+  if(!state.fileHandle) return;
+  const handle=state.fileHandle;
+  const name=state.sourceName||"本次压缩包";
+  if(!confirm("确定要删除本机磁盘上的原始压缩包吗？\n\n"+name+"\n\n删除后无法恢复。")) return;
+  try{
+    // 先申请读写权限（部分浏览器需要）
+    if(typeof handle.queryPermission==="function"){
+      let perm=await handle.queryPermission({mode:"readwrite"});
+      if(perm!=="granted" && typeof handle.requestPermission==="function"){
+        perm=await handle.requestPermission({mode:"readwrite"});
+      }
+      if(perm!=="granted"){
+        setStatus("浏览器未授予写入权限，无法删除该文件。","err");
+        return;
+      }
+    }
+    await handle.remove();      // 真正删除磁盘上的原文件
+    releaseAll();
+    $("result").textContent="已删除本机原始压缩包，并已释放本次内存数据。";
+    setStatus("原始压缩包已删除："+name,"ok");
+  }catch(e){
+    setStatus("删除失败："+(e.message||e)+"\n（若浏览器版本较旧，可能不支持网页删除本机文件）","err");
+  }
+};
+
+/* ---- 释放本次数据（注意：保留固定目录设置） ---- */
+function releaseAll(){
+  state.bytes=null; state.entries=new Map(); state.sourceName=""; state.fileHandle=null;
+  lastResultCode="";
+  $("book").value=""; $("page").value=""; $("no").value="";
+  $("deleteBox").classList.add("hidden");
+  setStatus("尚未载入压缩包。");
+}
+
+$("clear").onclick=()=>{
+  releaseAll();
+  $("result").textContent="本次数据已从页面状态中清除。";
+};
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+/* 初始化：先显示默认状态，再尝试从本机恢复设置 */
+updateFixedPathDisplay();
+restoreFixedDir();
+</script>
+</body>
+</html>
