@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>链接清洗工具 · 网盘 / 微博 / 公众号 / 飞书</title>
+<!-- ===== favicon 图标配置（GitHub Pages子路径使用相对路径，不要加 / 开头） ===== -->
+<link rel="icon" href="favicon.ico" type="image/x-icon">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<!-- ====================================================================== -->
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+        --brand: #4f6ef7; --brand-dark: #3b5de7;
+        --text: #1a1a1a; --border: #e8eaf0;
+    }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+                     'PingFang SC', 'Microsoft YaHei', sans-serif;
+        background: #f0f2f5; min-height: 100vh; padding: 32px 16px 60px; color: var(--text);
+    }
+    .container {
+        background: #fff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+        width: 100%; max-width: 760px; margin: 0 auto; padding: 32px;
+    }
+    h1 { font-size: 22px; color: #1a1a1a; margin-bottom: 6px; letter-spacing: -0.3px; }
+    .subtitle { font-size: 13px; color: #999; margin-bottom: 24px; line-height: 1.6; }
+    .label {
+        font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px;
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    .label .hint { font-weight: 400; font-size: 12px; color: #bbb; }
+    textarea {
+        width: 100%; height: 150px; border: 2px solid #e5e5e5; border-radius: 10px;
+        padding: 12px 14px; font-size: 13.5px; color: #333; resize: vertical;
+        transition: border-color 0.2s; line-height: 1.7;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        outline: none;
+    }
+    textarea:focus { border-color: var(--brand); }
+    textarea::placeholder { color: #bbb; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .options { display: flex; gap: 16px; margin-top: 10px; font-size: 12.5px; color: #667085; flex-wrap: wrap; }
+    .options label { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+    .options input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--brand); cursor: pointer; }
+    .options .desc { color: #b0b7c3; font-size: 11.5px; }
+    .toolbar { display: none; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
+    .toolbar.show { display: flex; }
+    .stats { font-size: 13px; color: #666; background: #f4f6fb; padding: 6px 12px; border-radius: 20px; }
+    .stats b { color: var(--brand); font-weight: 700; }
+    .toolbar-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn {
+        border: none; border-radius: 8px; padding: 8px 16px;
+        font-size: 12.5px; font-weight: 600; cursor: pointer;
+        transition: background 0.18s, transform 0.1s, color 0.18s;
+        white-space: nowrap; font-family: inherit;
+    }
+    .btn:active { transform: scale(0.96); }
+    .btn-primary { background: var(--brand); color: #fff; }
+    .btn-primary:hover { background: var(--brand-dark); }
+    .btn-primary.copied { background: #27ae60; }
+    .btn-ghost { background: #f2f4f8; color: #667085; }
+    .btn-ghost:hover { background: #e8ebf2; color: #333; }
+    .result-item {
+        margin-top: 12px; border: 1.5px solid var(--border); border-radius: 10px; overflow: hidden;
+        transition: border-color 0.2s, box-shadow 0.2s; animation: fadeIn 0.25s ease both;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    .result-item:hover { border-color: #c5cee8; box-shadow: 0 2px 10px rgba(79,110,247,0.07); }
+    .result-item-header {
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        padding: 9px 14px; background: #f7f8fb; border-bottom: 1px solid #eef0f5;
+    }
+    .result-type-badge {
+        font-size: 11px; font-weight: 700; padding: 3px 9px;
+        border-radius: 5px; display: inline-block; letter-spacing: 0.2px;
+    }
+    .result-host {
+        font-size: 11.5px; color: #a8b0c0; font-family: ui-monospace, Menlo, Consolas, monospace;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .result-item-body { display: flex; align-items: center; gap: 10px; padding: 11px 14px; }
+    .result-item-body + .result-item-body { border-top: 1px dashed #eef0f5; }
+    .result-text {
+        flex: 1; font-size: 13.5px; word-break: break-all;
+        font-family: ui-monospace, Menlo, Consolas, monospace; line-height: 1.65; min-width: 0;
+    }
+    .result-text.link { color: #1a73e8; }
+    .code-row { background: #fffaf6; }
+    .code-label {
+        font-size: 11px; font-weight: 700; color: #c0392b; background: #fdeee8;
+        padding: 3px 8px; border-radius: 5px; flex-shrink: 0; letter-spacing: 0.5px;
+    }
+    .result-text.code { color: #c0392b; font-size: 17px; font-weight: 700; letter-spacing: 3px; flex: 1; }
+    .btn-group { display: flex; gap: 6px; flex-shrink: 0; }
+    .btn-copy { background: var(--brand); color: #fff; padding: 7px 14px; font-size: 12px; }
+    .btn-copy:hover { background: var(--brand-dark); }
+    .btn-copy.copied { background: #27ae60; }
+    .btn-copy-sm { padding: 6px 11px; font-size: 11.5px; }
+    .btn-open {
+        background: #e8f8ee; color: #17864a; padding: 7px 12px; font-size: 12px;
+        text-decoration: none; display: inline-flex; align-items: center;
+        border-radius: 8px; font-weight: 600; transition: background 0.18s, color 0.18s;
+    }
+    .btn-open:hover { background: #d3efdf; color: #10693a; }
+    .empty-state { text-align: center; padding: 34px 20px; color: #cbd2dc; font-size: 14px; margin-top: 18px; }
+    .empty-state svg { width: 42px; height: 42px; fill: #dfe3ec; margin-bottom: 10px; }
+    .empty-state .tip { font-size: 12.5px; color: #c3c9d4; margin-top: 6px; }
+    .example {
+        margin-top: 22px; padding: 14px 16px; background: #f9fafc; border-radius: 10px;
+        font-size: 12.5px; color: #8b93a3; line-height: 1.9; border: 1px solid #f0f2f6;
+    }
+    .example strong { color: #5a6472; }
+    .example code { background: #eef1f6; padding: 1px 6px; border-radius: 4px; font-size: 11.5px; color: #5a6472; font-family: ui-monospace, Menlo, Consolas, monospace; }
+    .example .row { display: flex; gap: 8px; }
+    .example .row + .row { margin-top: 4px; }
+    .example .k { flex-shrink: 0; }
+    .toast {
+        position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(20px);
+        background: #2b2f38; color: #fff; padding: 11px 24px; border-radius: 10px;
+        font-size: 13px; font-weight: 500; opacity: 0;
+        transition: all 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+        pointer-events: none; z-index: 999; box-shadow: 0 8px 24px rgba(0,0,0,0.18); white-space: nowrap;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    @media (max-width: 560px) {
+        .container { padding: 22px 16px; } h1 { font-size: 19px; }
+        .result-item-body { flex-wrap: wrap; }
+        .btn-group { width: 100%; justify-content: flex-end; }
+        .toolbar { flex-direction: column; align-items: stretch; }
+        .toolbar-btns { justify-content: stretch; }
+        .toolbar-btns .btn { flex: 1; }
+    }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>🧹 链接清洗工具</h1>
+    <p class="subtitle">剔除 emoji 与干扰字符，还原纯净链接 · 支持网盘 / 微博 / 公众号 / 飞书 / 文档 等</p>
+    <label class="label" for="input">
+        <span>粘贴内容（每行一个，支持批量）</span>
+        <span class="hint">自动识别 · 自动去重 · 自动提取提取码</span>
+    </label>
+    <textarea id="input" spellcheck="false" placeholder="在此粘贴含干扰字符的链接，每行一个&#10;&#10;示例：&#10;https://pan⚠️.百度⚡搜.com/s/1AbCd🔥EfG  提🚫取码：aBcD&#10;夸克云🌊盘：https://pan.quark🔒.cn/s/xxx 密码：kq88&#10;微博：https://weibo.com/1234567/AbCdEf"></textarea>
+    <div class="options">
+        <label title="把中文域名修复为原始域名，例如 pan.百度搜.com → pan.baidu.com">
+            <input type="checkbox" id="optDomainFix" checked><span>中文域名修复</span>
+        </label>
+        <label title="遇到任何中文字符都直接丢弃">
+            <input type="checkbox" id="optAggressive"><span>激进模式</span>
+            <span class="desc">（丢弃所有中文）</span>
+        </label>
+        <label title="对识别出的链接进行全局去重">
+            <input type="checkbox" id="optDedup" checked><span>自动去重</span>
+        </label>
+    </div>
+    <div class="toolbar" id="toolbar">
+        <div class="stats" id="stats"></div>
+        <div class="toolbar-btns">
+            <button class="btn btn-ghost" id="copyAll">复制全部</button>
+            <button class="btn btn-ghost" id="openAll">打开全部</button>
+            <button class="btn btn-ghost" id="clearInput">清空</button>
+        </div>
+    </div>
+    <div id="resultArea">
+        <div class="empty-state">
+            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" /></svg>
+            <div>粘贴链接后此处将显示清洗结果</div>
+            <div class="tip">支持网盘 / 微博 / 公众号 / 飞书 / 腾讯文档 / 知乎 / B站 等</div>
+        </div>
+    </div>
+    <div class="example">
+        <div class="row"><span class="k"><strong>支持：</strong></span><span>百度网盘、阿里云盘、夸克网盘、蓝奏云、天翼云盘、城通、115、迅雷、360、OneDrive；微博、微信公众号、飞书、腾讯文档、石墨、语雀、Notion、知乎、B站、抖音、小红书、淘宝、京东、GitHub、YouTube、Telegram、磁力链等。</span></div>
+        <div class="row"><span class="k"><strong>清洗：</strong></span><span>自动去掉 emoji、零宽字符、全角字符、干扰词，并修复中文域名。</span></div>
+        <div class="row"><span class="k"><strong>提取码：</strong></span><span>自动识别常见关键词，支持同行 / 跨行智能配对。</span></div>
+    </div>
+</div>
+<div class="toast" id="toast">已复制到剪贴板 ✓</div>
+<script>
+/* ============================================================
+ *  0. 常量
+ * ============================================================ */
+const INVISIBLE_RE = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF\u00AD\u180E]/g;
+const EMOJI_RE = /[\p{Extended_Pictographic}\p{Emoji_Presentation}\u{1F3FB}-\u{1F3FF}\u{FE0E}\u{FE0F}\u{20E3}\u{1F1E6}-\u{1F1FF}]/gu;
+const CJK_RE = /[\u4e00-\u9fff\u3400-\u4dbf\u{20000}-\u{2A6DF}\u{2A700}-\u{2EBEF}]/gu;
+const DOMAIN_FIXES = [
+    [/百度搜|百度网盘|百度云盘|百度盘|百度云|百度/g, 'baidu'],
+    [/夸克云盘|夸克网盘|夸克云|夸克/g, 'quark'],
+    [/阿里云盘|阿里网盘|阿里云|阿里盘|阿里/g, 'aliyun'],
+    [/蓝奏云盘|蓝奏云|蓝奏/g, 'lanzou'],
+    [/天翼云盘|天翼云|天翼/g, '189'],
+    [/城通网盘|城通/g, 'ctfile'],
+    [/迅雷云盘|迅雷/g, 'xunlei'],
+    [/哔哩哔哩|哔哩|B站|b站/g, 'bilibili'],
+    [/小红书/g, 'xiaohongshu'],
+    [/抖音/g, 'douyin'],
+    [/微信公众号|公众号|微信/g, 'weixin'],
+    [/腾讯文档|腾讯/g, 'qq'],
+    [/石墨文档|石墨/g, 'shimo'],
+    [/微博/g, 'weibo'],
+    [/飞书/g, 'feishu'],
+    [/知乎/g, 'zhihu'],
+    [/语雀/g, 'yuque'],
+    [/淘宝|天猫/g, 'taobao'],
+    [/京东/g, 'jd'],
+];
+const NOISE_WORDS_RE = /不要看|不要点|别点|请勿|此处|删掉|删除|复制这段|复制|粘贴|这段|这些|干扰|屏蔽|和谐|审核|注意|提示|提醒|防吞|防和谐|懂的都懂|内容如下|点击链接|点击查看/g;
+const SITES = [
+    { id:'baidu', name:'百度网盘', color:'#1a73e8', bg:'#e8f0fe', hosts:['pan.baidu.com','eyun.baidu.com','yun.baidu.com','baidu.com'] },
+    { id:'aliyun', name:'阿里云盘', color:'#7c3aed', bg:'#f3e8ff', hosts:['aliyundrive.com','alipan.com','aliyunpan.com'] },
+    { id:'quark', name:'夸克网盘', color:'#0284c7', bg:'#e0f2fe', hosts:['pan.quark.cn','quark.cn'] },
+    { id:'uc', name:'UC 网盘', color:'#f59e0b', bg:'#fef3c7', hosts:['pan.uc.cn','uc.cn'] },
+    { id:'lanzou', name:'蓝奏云', color:'#d97706', bg:'#fef3c7', hosts:['lanzou.com','lanzoui.com','lanzoux.com','lanzoue.com','lanzouf.com','lanzoug.com','lanzouh.com','lanzouj.com','lanzouk.com','lanzoul.com','lanzoum.com','lanzoun.com','lanzouo.com','lanzoup.com','lanzouq.com','lanzour.com','lanzous.com','lanzout.com','lanzouu.com','lanzouv.com','lanzouw.com','lanzouy.com','lanzouz.com','woozooo.com','lanzn.com','lanzt.com','lanpv.com','lanzov.com','lanzoui.cn'] },
+    { id:'tianyi', name:'天翼云盘', color:'#dc2626', bg:'#fee2e2', hosts:['cloud.189.cn','189.cn'] },
+    { id:'ctfile', name:'城通网盘', color:'#059669', bg:'#d1fae5', hosts:['ctfile.com','400gb.com'] },
+    { id:'115', name:'115 网盘', color:'#2563eb', bg:'#dbeafe', hosts:['115.com','anxia.com','115cdn.com'] },
+    { id:'xunlei', name:'迅雷云盘', color:'#0ea5e9', bg:'#e0f2fe', hosts:['pan.xunlei.com','xunlei.com'] },
+    { id:'360', name:'360 云盘', color:'#16a34a', bg:'#dcfce7', hosts:['yunpan.360.cn','360kuai.com'] },
+    { id:'onedrive', name:'OneDrive', color:'#0364b8', bg:'#dbeafe', hosts:['1drv.ms','onedrive.live.com','sharepoint.com'] },
+    { id:'weibo', name:'微博', color:'#e6162d', bg:'#fee2e2', hosts:['weibo.com','weibo.cn','t.cn','sina.com.cn','sina.cn'] },
+    { id:'wechat', name:'微信公众号', color:'#07c160', bg:'#d1fae5', hosts:['mp.weixin.qq.com','weixin.qq.com'] },
+    { id:'feishu', name:'飞书', color:'#3370ff', bg:'#e0e7ff', hosts:['feishu.cn','feishu.net','larksuite.com','larkoffice.com'] },
+    { id:'tencentdoc', name:'腾讯文档', color:'#2b7ef0', bg:'#dbeafe', hosts:['docs.qq.com'] },
+    { id:'shimo', name:'石墨文档', color:'#10b981', bg:'#d1fae5', hosts:['shimo.im'] },
+    { id:'yuque', name:'语雀', color:'#22c55e', bg:'#dcfce7', hosts:['yuque.com'] },
+    { id:'notion', name:'Notion', color:'#111827', bg:'#e5e7eb', hosts:['notion.so','notion.site'] },
+    { id:'zhihu', name:'知乎', color:'#0084ff', bg:'#dbeafe', hosts:['zhihu.com','zhihu.link'] },
+    { id:'bilibili', name:'哔哩哔哩', color:'#fb7299', bg:'#ffe4ef', hosts:['bilibili.com','b23.tv','acg.tv'] },
+    { id:'douyin', name:'抖音', color:'#111827', bg:'#e5e7eb', hosts:['douyin.com','iesdouyin.com'] },
+    { id:'xhs', name:'小红书', color:'#ff2442', bg:'#ffe4e6', hosts:['xiaohongshu.com','xhslink.com'] },
+    { id:'taobao', name:'淘宝 / 天猫', color:'#ff5000', bg:'#ffedd5', hosts:['taobao.com','tmall.com','tb.cn'] },
+    { id:'jd', name:'京东', color:'#e1251b', bg:'#fee2e2', hosts:['jd.com','3.cn'] },
+    { id:'pdd', name:'拼多多', color:'#e02e24', bg:'#fee2e2', hosts:['yangkeduo.com','pinduoduo.com'] },
+    { id:'wwp', name:'文叔叔', color:'#4f46e5', bg:'#e0e7ff', hosts:['wwp.la','wenxiaoyun.com'] },
+    { id:'nzoup', name:'奶牛快传', color:'#0891b2', bg:'#cffafe', hosts:['nzoup.co','cowtransfer.com'] },
+    { id:'github', name:'GitHub', color:'#24292f', bg:'#eaeef2', hosts:['github.com','github.io','githubusercontent.com'] },
+    { id:'gitee', name:'Gitee', color:'#c71d23', bg:'#fee2e2', hosts:['gitee.com'] },
+    { id:'youtube', name:'YouTube', color:'#ff0000', bg:'#fee2e2', hosts:['youtube.com','youtu.be'] },
+    { id:'twitter', name:'X', color:'#111827', bg:'#e5e7eb', hosts:['twitter.com','x.com','t.co'] },
+    { id:'telegram', name:'Telegram', color:'#229ED9', bg:'#e0f2fe', hosts:['t.me','telegram.me','telegram.org'] },
+];
+const FALLBACK_SITE = { id:'other', name:'其他链接', color:'#64748b', bg:'#f1f5f9' };
+const MAGNET_SITE = { id:'magnet', name:'磁力链接', color:'#7c3aed', bg:'#f3e8ff' };
+const ED2K_SITE = { id:'ed2k', name:'电驴链接', color:'#0891b2', bg:'#cffafe' };
+const URL_RE = /(?:https?:\/\/|ftp:\/\/)?(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,24}(?::\d{1,5})?(?:[/?#][^\s\u4e00-\u9fff\u3000-\u303f\uff00-\uffef<>"'\[\](){}，。；：！？、；：]*)?/g;
+const URL_RE_FIRST = new RegExp(URL_RE.source); // 非全局版本，用于 search
+const SPECIAL_RE = /(?:magnet:\?[^\s\u4e00-\u9fff<>"'\[\](){}，。；：！？、；：]+|ed2k:\/\/[^\s\u4e00-\u9fff<>"'\[\](){}，。；：！？、；：]+|thunder:\/\/[^\s\u4e00-\u9fff<>"'\[\](){}，。；：！？、；：]+)/gi;
+const CODE_KEYWORD_RE = /(?:提取码|访问码|访问密码|提取密码|提取口令|提取\s*码|密码|口令|pwd|passcode|password)[^a-zA-Z0-9]{0,6}([a-zA-Z0-9]{4,12})/i;
+/* ============================================================
+ *  1. 工具函数
+ * ============================================================ */
+function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+function fullToHalf(str) {
+    return str.replace(/[\uFF01-\uFF5E]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)).replace(/\u3000/g, ' ');
+}
+function hostOf(url) {
+    try {
+        const u = new URL(/^[a-z]+:\/\//i.test(url) ? url : 'https://' + url);
+        return u.hostname.toLowerCase();
+    } catch { return ''; }
+}
+/* ============================================================
+ *  2. 清洗 + 解析
+ * ============================================================ */
+function normalizeLine(line, opts) {
+    let s = line;
+    s = s.replace(INVISIBLE_RE, '');
+    s = s.replace(EMOJI_RE, '');
+    s = fullToHalf(s);
+    if (opts.domainFix) for (const [re, rep] of DOMAIN_FIXES) s = s.replace(re, rep);
+    s = s.replace(NOISE_WORDS_RE, '');
+    if (opts.aggressive) s = s.replace(CJK_RE, '');
+    return s.replace(/[ \t]+/g, ' ').trim();
+}
+function extractUrls(line) {
+    const found = [];
+    let m;
+    SPECIAL_RE.lastIndex = 0;
+    while ((m = SPECIAL_RE.exec(line))) found.push(m[0]);
+    URL_RE.lastIndex = 0;
+    while ((m = URL_RE.exec(line))) {
+        const u = m[0];
+        if (/^(magnet|ed2k|thunder):/i.test(u)) continue;
+        found.push(u);
+    }
+    const seen = new Set();
+    const result = [];
+    for (let u of found) {
+        u = u.replace(/^[.,;:!?\[({（【《"'，。；：！？、；：]+/, '');
+        u = u.replace(/[.,;:!?)\]}>"'，。；：！？）】》\[({（【《、；：]+$/, '');
+        if (!u) continue;
+        const final = /^(magnet|ed2k|thunder|ftp|https?):/i.test(u) ? u : 'https://' + u.replace(/^\/+/, '');
+        const key = final.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(final);
+    }
+    return result;
+}
+function codeFromUrl(url) {
+    const m = url.match(/[?&#](?:pwd|password|passcode|code|sharekey)=([a-zA-Z0-9]{3,12})/i);
+    return m ? m[1] : null;
+}
+function matchSite(url) {
+    if (/^magnet:/i.test(url)) return MAGNET_SITE;
+    if (/^ed2k:/i.test(url)) return ED2K_SITE;
+    const host = hostOf(url);
+    if (!host) return FALLBACK_SITE;
+    for (const s of SITES) {
+        for (const h of s.hosts) {
+            if (host === h || host.endsWith('.' + h)) return s;
+        }
+    }
+    return FALLBACK_SITE;
+}
+/**
+ * 解析一行 → { cleaned, urls, code, orphanCode }
+ * ⭐ 关键逻辑：
+ *   - 如果同一行既有 URL 又有提取码，判断提取码出现的位置：
+ *     · 提取码在 URL 之后（如 "链接 提取码:abcd"）→ 直接绑定到该行 URL
+ *     · 提取码在 URL 之前（如 "提取码:abcd 链接"）→ 视为孤儿提取码，
+ *       很可能是上一行链接的提取码被错误地拼到了这一行
+ */
+function parseLine(rawLine, opts) {
+    const cleaned = normalizeLine(rawLine, opts);
+    const urls = extractUrls(cleaned);
+    let code = null;
+    let orphanCode = null;
+    // 优先从 URL 参数中取（如 ?pwd=abcd）
+    for (const u of urls) {
+        const urlCode = codeFromUrl(u);
+        if (urlCode) { code = urlCode; break; }
+    }
+    if (!code) {
+        const m = cleaned.match(CODE_KEYWORD_RE);
+        if (m) {
+            const foundCode = m[1];
+            const codeIdx = m.index;
+            const firstUrlIdx = cleaned.search(URL_RE_FIRST);
+            if (urls.length === 0) {
+                orphanCode = foundCode;
+            } else if (firstUrlIdx >= 0 && codeIdx < firstUrlIdx) {
+                // 提取码出现在该行 URL 之前 → 视为孤儿
+                orphanCode = foundCode;
+            } else {
+                code = foundCode;
+            }
+        }
+    }
+    return { cleaned, urls, code, orphanCode };
+}
+/* ============================================================
+ *  3. 主流程 + 提取码智能配对
+ * ============================================================ */
+const input = document.getElementById('input');
+const resultArea = document.getElementById('resultArea');
+const toast = document.getElementById('toast');
+const toolbar = document.getElementById('toolbar');
+const statsEl = document.getElementById('stats');
+const optDomainFix = document.getElementById('optDomainFix');
+const optAggressive = document.getElementById('optAggressive');
+const optDedup = document.getElementById('optDedup');
+let currentEntries = [];
+function getOptions() {
+    return {
+        domainFix: optDomainFix.checked,
+        aggressive: optAggressive.checked,
+        dedup: optDedup.checked,
+    };
+}
+function run() {
+    const text = input.value;
+    const opts = getOptions();
+    if (!text.trim()) {
+        toolbar.classList.remove('show');
+        currentEntries = [];
+        resultArea.innerHTML = `
+            <div class="empty-state">
+                <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" /></svg>
+                <div>粘贴链接后此处将显示清洗结果</div>
+                <div class="tip">支持网盘 / 微博 / 公众号 / 飞书 / 腾讯文档 / 知乎 / B站 等</div>
+            </div>`;
+        return;
+    }
+    const lines = text.split(/\r?\n/);
+    const parsedLines = [];   // 含 URL 的行
+    const orphanCodes = [];   // 未绑定到具体行的提取码
+    for (let i = 0; i < lines.length; i++) {
+        const raw = lines[i];
+        if (!raw.trim()) continue;
+        const { urls, code, orphanCode } = parseLine(raw, opts);
+        if (urls.length) {
+            parsedLines.push({
+                lineIndex: i,
+                links: urls.map(u => ({ url: u, site: matchSite(u) })),
+                code: code,
+            });
+        }
+        if (orphanCode) {
+            orphanCodes.push({ code: orphanCode, lineIndex: i });
+        }
+    }
+    // ⭐ 核心：提取码就近分配
+    //    规则：优先分配给「代码行之前的最近链接」（因为链接在前、提取码在后是常见排版）
+    //    如果前面没有可用链接，再考虑同行、后面的链接
+    for (const oc of orphanCodes) {
+        // 1) 严格在提取码行之前的、最近的、尚未配对的链接
+        let bestBefore = null;
+        for (const e of parsedLines) {
+            if (e.code) continue;
+            if (e.lineIndex >= oc.lineIndex) continue;
+            if (!bestBefore || e.lineIndex > bestBefore.lineIndex) bestBefore = e;
+        }
+        if (bestBefore) { bestBefore.code = oc.code; continue; }
+        // 2) 同一行（提取码在 URL 之后的情况已被 parseLine 处理，这里兜底）
+        let sameLine = null;
+        for (const e of parsedLines) {
+            if (e.code) continue;
+            if (e.lineIndex === oc.lineIndex) { sameLine = e; break; }
+        }
+        if (sameLine) { sameLine.code = oc.code; continue; }
+        // 3) 之后最近的链接（提取码在最上面的情况）
+        let bestAfter = null;
+        for (const e of parsedLines) {
+            if (e.code) continue;
+            if (e.lineIndex <= oc.lineIndex) continue;
+            if (!bestAfter || e.lineIndex < bestAfter.lineIndex) bestAfter = e;
+        }
+        if (bestAfter) bestAfter.code = oc.code;
+    }
+    // 去重
+    const seen = new Set();
+    let dupCount = 0;
+    const finalEntries = [];
+    for (const e of parsedLines) {
+        const kept = opts.dedup
+            ? e.links.filter(l => {
+                const key = l.url.toLowerCase();
+                if (seen.has(key)) { dupCount++; return false; }
+                seen.add(key);
+                return true;
+            })
+            : e.links;
+        if (kept.length) { e.links = kept; finalEntries.push(e); }
+    }
+    currentEntries = finalEntries;
+    render(finalEntries, dupCount);
+}
+/* ============================================================
+ *  4. 渲染
+ * ============================================================ */
+function renderCard(link, code) {
+    const site = link.site || FALLBACK_SITE;
+    const host = hostOf(link.url) || '—';
+    const safeUrl = escapeHtml(link.url);
+    return `
+    <div class="result-item">
+        <div class="result-item-header">
+            <span class="result-type-badge" style="background:${site.bg};color:${site.color}">
+                ${escapeHtml(site.name)}
+            </span>
+            <span class="result-host">${escapeHtml(host)}</span>
+        </div>
+        <div class="result-item-body">
+            <div class="result-text link">${safeUrl}</div>
+            <div class="btn-group">
+                <button class="btn btn-copy" data-copy="${safeUrl}">复制</button>
+                <a class="btn-open" href="${safeUrl}" target="_blank" rel="noopener noreferrer">打开</a>
+            </div>
+        </div>
+        ${code ? `
+        <div class="result-item-body code-row">
+            <span class="code-label">提取码</span>
+            <div class="result-text code">${escapeHtml(code)}</div>
+            <div class="btn-group">
+                <button class="btn btn-copy btn-copy-sm" data-copy="${escapeHtml(code)}">复制</button>
+            </div>
+        </div>` : ''}
+    </div>`;
+}
+function render(entries, dupCount) {
+    if (!entries.length) {
+        toolbar.classList.remove('show');
+        resultArea.innerHTML = `
+            <div class="empty-state">
+                <svg viewBox="0 0 24 24" style="fill:#f0c0c0"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" /></svg>
+                <div>没有识别到有效链接</div>
+                <div class="tip">请检查内容是否包含 http(s) 链接</div>
+            </div>`;
+        return;
+    }
+    const linkCount = entries.reduce((n, e) => n + e.links.length, 0);
+    const codeCount = entries.filter(e => e.code).length;
+    statsEl.innerHTML = `识别 <b>${linkCount}</b> 条链接` +
+        (codeCount ? ` · <b>${codeCount}</b> 个提取码` : '') +
+        (dupCount ? ` · 去重 ${dupCount} 条` : '');
+    toolbar.classList.add('show');
+    const html = [];
+    for (const e of entries) {
+        e.links.forEach((link, idx) => {
+            html.push(renderCard(link, idx === 0 ? e.code : null));
+        });
+    }
+    resultArea.innerHTML = html.join('');
+}
+/* ============================================================
+ *  5. 交互
+ * ============================================================ */
+async function copyText(text) {
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch (_) { }
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select(); ta.setSelectionRange(0, ta.value.length);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (_) {}
+    document.body.removeChild(ta);
+    return ok;
+}
+let toastTimer = null;
+function showToast(msg) {
+    toast.textContent = msg || '已复制到剪贴板 ✓';
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+}
+resultArea.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-copy]');
+    if (!btn) return;
+    const text = btn.getAttribute('data-copy');
+    const ok = await copyText(text);
+    if (ok) {
+        const original = btn.textContent;
+        btn.textContent = '已复制';
+        btn.classList.add('copied');
+        showToast('已复制到剪贴板 ✓');
+        setTimeout(() => { btn.textContent = original; btn.classList.remove('copied'); }, 1200);
+    } else {
+        showToast('复制失败，请手动选择');
+    }
+});
+document.getElementById('copyAll').addEventListener('click', async () => {
+    if (!currentEntries.length) return;
+    const all = currentEntries.flatMap(e => e.links.map(l => l.url)).join('\n');
+    const ok = await copyText(all);
+    showToast(ok ? `已复制 ${currentEntries.reduce((n, e) => n + e.links.length, 0)} 条链接 ✓` : '复制失败');
+});
+document.getElementById('openAll').addEventListener('click', () => {
+    if (!currentEntries.length) return;
+    const urls = currentEntries.flatMap(e => e.links.map(l => l.url));
+    if (!urls.length) return;
+    const first = window.open(urls[0], '_blank');
+    if (!first) { showToast('浏览器拦截了弹窗，请允许后重试'); return; }
+    let i = 1;
+    const timer = setInterval(() => {
+        if (i >= urls.length) { clearInterval(timer); return; }
+        window.open(urls[i], '_blank');
+        i++;
+    }, 200);
+    showToast(`正在打开 ${urls.length} 个链接…`);
+});
+document.getElementById('clearInput').addEventListener('click', () => {
+    input.value = '';
+    input.focus();
+    run();
+});
+[optDomainFix, optAggressive, optDedup].forEach(el => el.addEventListener('change', run));
+let debounceTimer = null;
+input.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(run, 180);
+});
+input.addEventListener('paste', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(run, 30);
+});
+run();
+</script>
+</body>
+</html>
